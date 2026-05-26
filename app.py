@@ -1,6 +1,7 @@
 import os
+import uuid
 from flask import Flask, render_template_string, request, redirect
-from azure.cosmos import CosmosClient, exceptions
+from azure.cosmos import CosmosClient, exceptions, PartitionKey # 👈 Importation de PartitionKey ajouté ici
 
 app = Flask(__name__)
 
@@ -15,10 +16,11 @@ if CONNECTION_STRING:
         client = CosmosClient.from_connection_string(CONNECTION_STRING)
         # Création ou récupération de la base de données
         db = client.create_database_if_not_exists(id="FeedbackDB")
-        # Création ou récupération du conteneur (partitionné par /id pour faire simple)
+        
+        # 🛠️ CORRECTION : Utilisation de l'objet PartitionKey officiel pour éviter le crash BadRequest
         container = db.create_container_if_not_exists(
             id="Feedbacks", 
-            partition_key={"path": "/id", "kind": "Hash"}
+            partition_key=PartitionKey(path="/id")
         )
         cosmos_status = "✅ Connecté à Cosmos DB"
     except Exception as e:
@@ -140,9 +142,8 @@ def submit():
         commentaire = request.form.get('commentaire')
         
         # Structure de l'élément à enregistrer dans Cosmos DB
-        import uuid
         feedback_item = {
-            "id": str(uuid.uuid4()), # Cosmos DB requiert un champ 'id' unique de type string
+            "id": str(uuid.uuid4()),
             "nom": nom,
             "commentaire": commentaire
         }
