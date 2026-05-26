@@ -1,7 +1,9 @@
 import os
 import uuid
+import json  # 👈 Ajouté pour structurer les données envoyées à la fonction
+import urllib.request  # 👈 Ajouté pour appeler l'URL de l'Azure Function sans dépendance externe
 from flask import Flask, render_template_string, request, redirect
-from azure.cosmos import CosmosClient, exceptions, PartitionKey # 👈 Importation de PartitionKey ajouté ici
+from azure.cosmos import CosmosClient, exceptions, PartitionKey
 
 app = Flask(__name__)
 
@@ -17,7 +19,7 @@ if CONNECTION_STRING:
         # Création ou récupération de la base de données
         db = client.create_database_if_not_exists(id="FeedbackDB")
         
-        # 🛠️ CORRECTION : Utilisation de l'objet PartitionKey officiel pour éviter le crash BadRequest
+        # Utilisation de l'objet PartitionKey officiel
         container = db.create_container_if_not_exists(
             id="Feedbacks", 
             partition_key=PartitionKey(path="/id")
@@ -141,7 +143,6 @@ def submit():
         nom = request.form.get('nom')
         commentaire = request.form.get('commentaire')
         
-        # Structure de l'élément à enregistrer dans Cosmos DB
         feedback_item = {
             "id": str(uuid.uuid4()),
             "nom": nom,
@@ -149,11 +150,30 @@ def submit():
         }
         
         try:
-            # Enregistrement dans le conteneur Azure Cosmos DB
+            # 1. Enregistrement initial dans Cosmos DB
             container.create_item(body=feedback_item)
-            return redirect("/?msg=Feedback enregistré avec succès dans Cosmos DB !")
+            
+            # 2. 🚀 APPEL DE VOTRE AZURE FUNCTION HTTP
+            url_function = "https://feedback-function-cdp-cyf6ehgwc9adgybu.westus3-01.azurewebsites.net/api/SendThankYouEmail"
+            
+            # Structuration de la charge utile JSON attendue par la fonction Node.js (req.body.email)
+            payload = json.dumps({"email": nom}).encode('utf-8')
+            
+            # Envoi de la requête POST
+            req_azure = urllib.request.Request(
+                url_function, 
+                data=payload, 
+                headers={'Content-Type': 'application/json'},
+                method='POST'
+            )
+            
+            # On exécute l'appel en fermant directement la connexion
+            with urllib.request.urlopen(req_azure, timeout=5) as response:
+                pass
+                
+            return redirect("/?msg=Feedback enregistré et e-mail simulé avec succès !")
         except Exception as e:
-            return f"Erreur lors de l'enregistrement : {str(e)}"
+            return f"Erreur lors de l'exécution : {str(e)}"
             
     return redirect("/")
 
